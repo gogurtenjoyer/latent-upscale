@@ -11,8 +11,9 @@ Navigate to your InvokeAI installation's `nodes` folder, and run
 ```
 git clone https://github.com/gogurtenjoyer/latent-upscale
 ```
+or, just click the green button in the upper-right here, download the zip, and unzip it in your `nodes` folder.
 
-If you'd like, you can also manually download models from the original author's HF repo here, or just let the node auto-download them on-demand (they are very small, so it'll be quick). If you do choose to download them yourself, make sure you grab the latest (v2.1) version of the models, make a new `models` folder within this node's folder, and place the safetensor files there.
+If you'd like, you can also manually download models from the original author's HF repo [here](https://huggingface.co/city96/SD-Latent-Upscaler/tree/main), or just let the node auto-download them on-demand (they are very small, so it'll be quick). If you do choose to download them yourself, make sure you grab the latest (v2.1) version of the models, make a new `models` folder within this node's folder, and place the safetensor files there.
 
 ## Usage
 
