@@ -6,26 +6,18 @@ import torch.nn as nn
 from safetensors.torch import load_file
 from huggingface_hub import hf_hub_download
 
-from invokeai.app.invocations.primitives import (
-    LatentsField,
-    LatentsOutput,
-    build_latents_output,
-)
+from invokeai.app.invocations.fields import FieldDescriptions
 
-from invokeai.app.shared.fields import FieldDescriptions
-from invokeai.backend.util.devices import choose_torch_device
-
-
-from invokeai.app.invocations.baseinvocation import (
+from invokeai.invocation_api import (
     BaseInvocation,
     Input,
     InputField,
     InvocationContext,
     invocation,
+    LatentsField,
+    LatentsOutput
 )
 
-if choose_torch_device() == torch.device("mps"):
-    from torch import mps
 
 class Upscaler(nn.Module):
     """
@@ -71,6 +63,7 @@ class Upscaler(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.sequential(x)
 
+
 SD_VERSIONS = Literal[('v1', 'xl')]
 FACTORS = Literal[('1.25', '1.5', '2.0')]
 
@@ -80,7 +73,7 @@ FACTORS = Literal[('1.25', '1.5', '2.0')]
     title="Upscale Latents",
     tags=["latents", "upscale"],
     category="latents",
-    version="1.0.0",
+    version="1.1.0",
 )
 class UpscaleLatentsInvocation(BaseInvocation):
     """Upscales latents using a trained model"""
@@ -90,18 +83,16 @@ class UpscaleLatentsInvocation(BaseInvocation):
         input=Input.Connection,
     )
     latent_ver: SD_VERSIONS = InputField(default='v1', input=Input.Direct)
-    #scale_factor: float = InputField(gt=0, default=2.0, description="the factor to scale by, MUST BE 1.25, 1.5, or 2.0")
     scale_factor: FACTORS = InputField(default='2.0', input=Input.Direct)
     magic_number: float = InputField(default=0.18215, description="Unless you have a great reason, do not change from 0.18215!")
 
     def invoke(self, context: InvocationContext) -> LatentsOutput:
-        latents = context.services.latents.get(self.latents.latents_name)
+        latents = context.tensors.load(self.latents.latents_name)
 
         latents = torch.div(latents, self.magic_number) # MAGIC NUMBER! YOU'LL SEE ME AGAIN!!
 
-        device = choose_torch_device()
         model = Upscaler(self.scale_factor)
-        # latent_ver = "v1"
+
         filename = f"latent-upscaler-v{model.version}_SD{self.latent_ver}-x{self.scale_factor}.safetensors"
         local = os.path.join(
             os.path.join(os.path.dirname(os.path.realpath(__file__)),"models"),
@@ -109,10 +100,10 @@ class UpscaleLatentsInvocation(BaseInvocation):
         )
 
         if os.path.isfile(local):
-            context.services.logger.info("[Upscale Latents] Using Local Model")
+            context.logger.info("[Upscale Latents] Using Local Model")
             weights = local
         else:
-            context.services.logger.info("[Upscale Latents] Using HF Hub Model")
+            context.logger.info("[Upscale Latents] Using HF Hub Model")
             weights = str(hf_hub_download(
                 repo_id="city96/SD-Latent-Upscaler",
                 filename=filename)
@@ -125,11 +116,6 @@ class UpscaleLatentsInvocation(BaseInvocation):
         resized_latents = torch.mul(resized_latents, self.magic_number) # HELLO AGAIN FROM YOUR OLD FRIEND, MAGIC NUMBER!
         del model
 
-        # we're not actually doing this on CUDA/MPS, so this may not do much
-        torch.cuda.empty_cache()
-        if device == torch.device("mps"):
-            mps.empty_cache()
+        name = context.tensors.save(tensor=resized_latents)
+        return LatentsOutput.build(latents_name=name, latents=resized_latents, seed=self.latents.seed)
 
-        name = f"{context.graph_execution_state_id}__{self.id}"
-        context.services.latents.save(name, resized_latents)
-        return build_latents_output(latents_name=name, latents=resized_latents, seed=self.latents.seed)
